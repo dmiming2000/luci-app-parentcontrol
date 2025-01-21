@@ -1,7 +1,13 @@
+
 name: Build and Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'tags'
+        required: true
+        default: 'v1.7'
   push:
     tags:
       - "*"
@@ -14,9 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
-            sdk_url_path: https://downloads.openwrt.org/snapshots/targets/x86/64
-            sdk_name: -sdk-x86-64_
+          - arch: aarch64_cortex-a53
+            sdk_url_path: https://downloads.openwrt.org/snapshots/targets/mediatek/filogic
+            sdk_name: -sdk-mediatek-filogic_
 
     env:
       PACKAGE_NAME: luci-app-parentcontrol
@@ -26,7 +32,7 @@ jobs:
       CACHE_DIR: ~/cache
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
@@ -57,10 +63,14 @@ jobs:
           unzstd "$SDK_DL_DIR/$SDK_FILE" -o "${SDK_FILE%.zst}.tar"
           tar -xf "${SDK_FILE%.zst}.tar" -C "$SDK_HOME" --strip=1 || { echo "Failed to extract SDK"; exit 1; }
 
-      - name: Create Release Tag
+      - name: Create Release Tag - push
         if: github.event_name == 'push' && github.ref_type == 'tag'
         run: git tag ${{ github.ref }}
-      
+
+      - name: Create Release Tag - input
+        if: github.event_name == 'workflow_dispatch'
+        run: git tag ${{ github.event.inputs.tag }}
+
       - name: Build Packages
         run: |
           source $GITHUB_ENV
@@ -73,11 +83,20 @@ jobs:
           find "$SDK_HOME/bin" -type f -name "${PACKAGE_NAME}_*.ipk" \
            -exec cp -f {} "${GITHUB_WORKSPACE}" \;
 
-      - name: Release and Upload Assets
-        if: github.event_name == 'push' && github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v1
+      - name: Release and Upload Assets - push
+        if:  github.event_name == 'push' && github.ref_type == 'tag'
+        uses: softprops/action-gh-release@master
         with:
           tag_name: ${{ github.ref }}
+          files: "*.ipk"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release and Upload Assets - input
+        if:  github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@master
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
           files: "*.ipk"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
